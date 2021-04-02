@@ -14,6 +14,8 @@ from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedul
 from stable_baselines3.common.utils import safe_mean
 from stable_baselines3.common.vec_env import VecEnv
 
+mode = 'debug'
+# mode = 'learn'
 
 class OnPolicyAlgorithm(BaseAlgorithm):
     """
@@ -114,7 +116,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             gae_lambda=self.gae_lambda,
             n_envs=self.n_envs,
         )
-        self.policy = self.policy_class(  # pytype:disable=not-instantiable
+        self.policy = self.policy_class(
             self.observation_space,
             self.action_space,
             self.lr_schedule,
@@ -147,17 +149,29 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             self.policy.reset_noise(env.num_envs)
 
         callback.on_rollout_start()
+        
+        # debug ===============================================================
+        if mode == 'debug':
+            print(["OPA.collect_rollouts started, let's roll!"])
 
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
                 # Sample a new noise matrix
                 self.policy.reset_noise(env.num_envs)
-
+            
+            # notes ===========================================================
+            # use last observation to generate action (with log probs) and value
             with th.no_grad():
                 # Convert to pytorch tensor
                 obs_tensor = th.as_tensor(self._last_obs).to(self.device)
                 actions, values, log_probs = self.policy.forward(obs_tensor)
             actions = actions.cpu().numpy()
+            
+            # debug ===========================================================
+            if mode == 'debug':
+                print(['OPA.collect_rollouts loop', 'n_rollout_steps:', n_rollout_steps, 'n_steps:', n_steps])
+                print(['OPA.collect_rollouts loop eval', 
+                       'last_obs:', self._last_obs, 'actions', actions, 'values', values, 'log_probs', log_probs])
 
             # Rescale and perform action
             clipped_actions = actions
@@ -165,6 +179,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             if isinstance(self.action_space, gym.spaces.Box):
                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
+            # notes ===========================================================
+            # use clipped_actions to interact with env
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
             self.num_timesteps += env.num_envs
@@ -181,6 +197,14 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 # Reshape in case of discrete action
                 actions = actions.reshape(-1, 1)
             rollout_buffer.add(self._last_obs, actions, rewards, self._last_dones, values, log_probs)
+            # debug ===========================================================
+            if mode == 'debug':
+                print(['OPA.collect_rollouts loop save', 
+                       'last_obs:', self._last_obs, 'actions', actions, 'values', values, 'log_probs', log_probs, 
+                       'rewards', rewards, 'last_dones', self._last_dones])
+            # notes ===========================================================
+            # 6 things to save in buffer: last_obs, actions, rewards, last_dones, values, log_probs
+
             self._last_obs = new_obs
             self._last_dones = dones
 
@@ -188,8 +212,14 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             # Compute value for the last timestep
             obs_tensor = th.as_tensor(new_obs).to(self.device)
             _, values, _ = self.policy.forward(obs_tensor)
-
+        
+        # debug ===============================================================
+        if mode == 'debug':
+            print(['OPA.collect_rollouts last', 'new_obs:', new_obs, 'values:', values, 'dones:', dones])
+            print(['OPA.collect_rollouts finished, ready to compute_returns'])
+            
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+        
 
         callback.on_rollout_end()
 
@@ -215,13 +245,18 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         reset_num_timesteps: bool = True,
     ) -> "OnPolicyAlgorithm":
         iteration = 0
-
+        
         total_timesteps, callback = self._setup_learn(
             total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, eval_log_path, reset_num_timesteps, tb_log_name
         )
 
         callback.on_training_start(locals(), globals())
-
+        
+        # debug ===============================================================
+        if mode == 'debug':
+            print(['OPA.learn started, ready to loop (OPA.collect_rollouts + OPA.train)'])
+            
+        
         while self.num_timesteps < total_timesteps:
 
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
@@ -231,6 +266,10 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
             iteration += 1
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
+            
+            # debug ===========================================================
+            if mode == 'debug':
+                print(['OPA.learn', 'num_timesteps:', self.num_timesteps, 'total_timesteps:', total_timesteps])
 
             # Display training infos
             if log_interval is not None and iteration % log_interval == 0:
@@ -243,7 +282,9 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 logger.record("time/time_elapsed", int(time.time() - self.start_time), exclude="tensorboard")
                 logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
                 logger.dump(step=self.num_timesteps)
-
+            # debug ===============================================================
+            if mode == 'debug':
+                print(['OPA.learn finished, ready to OPA.train'])
             self.train()
 
         callback.on_training_end()
