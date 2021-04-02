@@ -6,6 +6,9 @@ import numpy as np
 import torch as th
 from gym import spaces
 
+mode = 'debug'
+# mode = 'learn'
+
 try:
     # Check memory used by replay buffer when possible
     import psutil
@@ -328,7 +331,13 @@ class RolloutBuffer(BaseBuffer):
         # convert to numpy
         last_values = last_values.clone().cpu().numpy().flatten()
 
-        last_gae_lam = 0
+        # debug ===============================================================
+        if mode == 'debug':
+            print(["buffers.compute_returns_and_advantage started"])
+            print(["buffers.compute_returns_and_advantage", "rewards:", self.rewards.flatten()])
+            print(["buffers.compute_returns_and_advantage", "values:", self.values.flatten()])
+            
+        last_gae_lam = 0          
         for step in reversed(range(self.buffer_size)):
             if step == self.buffer_size - 1:
                 next_non_terminal = 1.0 - dones
@@ -340,6 +349,12 @@ class RolloutBuffer(BaseBuffer):
             last_gae_lam = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam
             self.advantages[step] = last_gae_lam
         self.returns = self.advantages + self.values
+        
+        # debug ===============================================================
+        if mode == 'debug':
+            print(["buffers.compute_returns_and_advantage", "advantages:", self.advantages.flatten()])
+            print(["buffers.compute_returns_and_advantage", "returns:", self.returns.flatten()])
+            print(["buffers.compute_returns_and_advantage finished"])
 
     def add(
         self, obs: np.ndarray, action: np.ndarray, reward: np.ndarray, done: np.ndarray, value: th.Tensor, log_prob: th.Tensor
@@ -357,11 +372,6 @@ class RolloutBuffer(BaseBuffer):
         if len(log_prob.shape) == 0:
             # Reshape 0-d tensor to avoid error
             log_prob = log_prob.reshape(-1, 1)
-
-        # Reshape needed when using multiple envs with discrete observations
-        # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
-        if isinstance(self.observation_space, spaces.Discrete):
-            obs = obs.reshape((self.n_envs,) + self.obs_shape)
 
         self.observations[self.pos] = np.array(obs).copy()
         self.actions[self.pos] = np.array(action).copy()
