@@ -10,17 +10,16 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import explained_variance
 
+mode = 'debug'
+# mode = 'learn'
 
 class A2C(OnPolicyAlgorithm):
     """
     Advantage Actor Critic (A2C)
-
     Paper: https://arxiv.org/abs/1602.01783
     Code: This implementation borrows code from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail and
     and Stable Baselines (https://github.com/hill-a/stable-baselines)
-
     Introduction to A2C: https://hackernoon.com/intuitive-rl-intro-to-advantage-actor-critic-a2c-4ff545978752
-
     :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
     :param env: The environment to learn from (if registered in Gym, can be str)
     :param learning_rate: The learning rate, it can be a function
@@ -120,6 +119,10 @@ class A2C(OnPolicyAlgorithm):
         Update policy using the currently gathered
         rollout buffer (one gradient step over whole data).
         """
+        # debug ===============================================================
+        if mode == 'debug':
+            print(["A2C.train"])
+        
         # Update optimizer learning rate
         self._update_learning_rate(self.policy.optimizer)
 
@@ -127,6 +130,7 @@ class A2C(OnPolicyAlgorithm):
         for rollout_data in self.rollout_buffer.get(batch_size=None):
 
             actions = rollout_data.actions
+            
             if isinstance(self.action_space, spaces.Discrete):
                 # Convert discrete action from float to long
                 actions = actions.long().flatten()
@@ -145,7 +149,13 @@ class A2C(OnPolicyAlgorithm):
 
             # Value loss using the TD(gae_lambda) target
             value_loss = F.mse_loss(rollout_data.returns, values)
-
+            
+            # debug ===========================================================
+            if mode == 'debug':
+                print(['A2C.train loop', 'rollout_data.actions', actions, 'rollout_data.observations', rollout_data.observations])
+                print(['A2C.train loop', 'rollout_data.returns', rollout_data.returns, 'values', values])
+                print(['A2C.train compute grad and optimize parameters!'])
+            
             # Entropy loss favor exploration
             if entropy is None:
                 # Approximate entropy when no analytical form
@@ -166,6 +176,11 @@ class A2C(OnPolicyAlgorithm):
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 
         self._n_updates += 1
+        
+        # debug ===========================================================
+        if mode == 'debug':
+            print(['A2C.train after loop', 'n_updates', self._n_updates])
+               
         logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         logger.record("train/explained_variance", explained_var)
         logger.record("train/entropy_loss", entropy_loss.item())
