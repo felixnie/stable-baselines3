@@ -7,10 +7,13 @@
 # Stable Baselines3
 
 > Files modified:
+> 
 > * a2c/a2c.py
 > * common/on_policy_algorithm.py
 > * common/buffers.py
+> 
 > Set mode = 'learn' or anything else to train.
+> 
 > Restart kernel if any SB3 lib file is modified.
 
 Stable Baselines3 (SB3) is a set of reliable implementations of reinforcement learning algorithms in PyTorch. It is the next major version of [Stable Baselines](https://github.com/hill-a/stable-baselines).
